@@ -1,3 +1,5 @@
+#ifndef RUMRSPLASHSCREEN_H
+#define RUMRSPLASHSCREEN_H
 #include <Adafruit_SSD1306.h>
 
 const unsigned char rumrLogo [] PROGMEM = {
@@ -45,4 +47,5 @@ class RumrSplashScreen
   private:
     Adafruit_SSD1306* _display;
 };
+#endif
 

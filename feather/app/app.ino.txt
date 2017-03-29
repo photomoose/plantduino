@@ -1,0 +1,159 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <time.h>
+#include <sys/time.h>
+#include <SPI.h>
+
+#include <Adafruit_WINC1500.h>
+#include <Adafruit_WINC1500SSLClient.h>
+#include <Adafruit_WINC1500Udp.h>
+#include <NTPClient.h>
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <Adafruit_GFX.h> 
+#include <Adafruit_SSD1306.h>
+
+#include <AzureIoTHub.h>
+#include <AzureIoTUtility.h>
+#include <AzureIoTProtocol_MQTT.h>
+
+#include "RumrSplashScreen.h"
+#include "config.h"
+#include "iot.h"
+
+#define OLED_RESET  4
+#define DS_DQ       5
+#define WINC_CS     8
+#define WINC_IRQ    7
+#define WINC_RST    4
+#define WINC_EN     2    
+
+
+Adafruit_WINC1500 WiFi(WINC_CS, WINC_IRQ, WINC_RST);
+static Adafruit_WINC1500SSLClient sslClient;
+
+DeviceAddress inDSAddr  = { 0x28, 0xFF, 0x92, 0x59, 0x70, 0x14, 0x04, 0x6E };
+DeviceAddress outDSAddr = { 0x28, 0xFF, 0x97, 0x75, 0x70, 0x14, 0x04, 0xDE };
+
+Adafruit_SSD1306 display(OLED_RESET);
+RumrSplashScreen splash(&display);
+
+OneWire oneWire(DS_DQ);
+DallasTemperature ds(&oneWire);
+
+Adafruit_WINC1500UDP ntpUdp;
+NTPClient ntpClient(ntpUdp, ntpSource);
+
+static AzureIoTHubClient iotHubClient;
+
+void setup() {
+  pinMode(WINC_EN, OUTPUT);
+  digitalWrite(WINC_EN, HIGH);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  Serial.begin(9600);
+
+  display.begin();
+  splash.show();
+
+  delay(3000);
+  
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  printMacAddress();
+  connectToWifi();
+  ntpClient.begin();
+
+  unsigned long epochTime = ntpClient.getEpochTime();
+  iotHubClient.setEpochTime(epochTime);
+  
+  delay(5000);
+ 
+  ds.begin();
+
+  iotHubClient.begin(sslClient);
+}
+
+void loop() {
+  float tempInside = ds.getTempC(inDSAddr);
+  float tempOutside = ds.getTempC(outDSAddr);
+
+  ntpClient.update();
+    
+  ds.requestTemperatures();
+  display.setTextSize(2);
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  //display.print("Out: ");
+  //display.println(tempOutside);
+  display.print("In:  ");
+  display.println(tempInside); 
+  display.println(ntpClient.getFormattedTime());
+  display.display();
+
+  simplesample_mqtt_run();
+
+  delay(1000);
+
+}
+
+void printMacAddress() {
+  // the MAC address of your WiFi shield
+  byte mac[6];
+
+  // print your MAC address:
+  WiFi.macAddress(mac);
+  display.print("MAC: ");
+  display.print(mac[5], HEX);
+  display.print(":");
+  display.print(mac[4], HEX);
+  display.print(":");
+  display.print(mac[3], HEX);
+  display.print(":");
+  display.print(mac[2], HEX);
+  display.print(":");
+  display.print(mac[1], HEX);
+  display.print(":");
+  display.println(mac[0], HEX);
+  display.display();
+}
+
+void connectToWifi() {
+  int status = WL_IDLE_STATUS; 
+
+  while ( status != WL_CONNECTED) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("Connecting to");
+    display.println(ssid);
+    display.println();
+    display.display();    
+
+    status = WiFi.begin(ssid, pass);
+
+    if (status != WL_CONNECTED) {
+      display.println("Failed. Retrying...");
+      display.display();
+      delay(5000);
+    }
+  } 
+
+  display.clearDisplay();
+  display.setCursor(0,0);
+
+  IPAddress ip = WiFi.localIP();
+  display.print("IP: ");
+  display.println(ip);  
+
+  long rssi = WiFi.RSSI();
+  display.print("RSSI: ");
+  display.println(rssi);
+
+  display.display();  
+}
